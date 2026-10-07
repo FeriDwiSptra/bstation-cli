@@ -281,6 +281,7 @@ from anywhere.
 - Subtitle availability can vary between episodes.
 - The function currently assumes Firefox is the browser used for Bstation authentication.
 - This project is intended as a terminal convenience tool and is not affiliated with Bstation or Bilibili.
+- If video has a [Premium] Label, it Cannot be Played Unless Your Bstation Account has a Premium Subscription.
 
 ---
 

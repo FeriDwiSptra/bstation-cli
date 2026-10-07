@@ -164,56 +164,35 @@ bstation() {
         local target_ep="E${direct_ep}"
         local direct_result
 
-        direct_result=$(
-            jq -r --arg ep "$target_ep" '
-                [
-                    .data.sections[]? as $section |
-                    $section.episodes[]? |
-                    select(.short_title_display == $ep) |
-                    {
-                        section: ($section.title // ""),
-                        episode_id: .episode_id,
-                        title: (
-                            .title_display
-                            // .long_title_display
-                            // .short_title_display
-                            // "Episode"
-                        ),
-                        limit: (.limit // 0)
-                    }
-                ]
-
-                | if length == 0 then
-                    empty
-
-                  elif length == 1 then
-                    .[0]
-
-                  else
-                    (
-                        map(
-                            select(
-                                .section
-                                | test("retake"; "i")
-                                | not
-                            )
-                        )
-                        | if length > 0
-                            then .[0]
-                            else .[0]
-                          end
-                    )
-                  end
-
-                | [
-                    .episode_id,
-                    .title,
-                    (.limit | tostring)
-                ]
-
-                | @tsv
-            ' "$episodes_file"
+        direct_result=$(jq -r --arg ep "$target_ep" '
+    [
+        .data.sections[] as $section |
+        $section.episodes[] |
+        select(.short_title_display == $ep) |
+        {
+            section: $section.title,
+            episode_id: .episode_id,
+            title: .title_display,
+            limit_text: .limit_text
+        }
+    ]
+    | if length == 0 then
+        empty
+      elif length == 1 then
+        .[0]
+      else
+        (
+            map(select(.section | test("retake"; "i") | not))
+            | if length > 0 then .[0] else .[0] end
         )
+      end
+    | [
+        .episode_id,
+        .title,
+        (.limit_text // "")
+    ]
+    | @tsv
+' "$episodes_file")
 
         if [[ -z "$direct_result" ]]; then
             echo "Episode E${direct_ep} tidak ditemukan."
@@ -232,16 +211,22 @@ bstation() {
 
         rm -f "$episodes_file"
 
-        echo
-        echo "Memutar: $selected_ep_title"
-        echo
+        if [[ "$selected_limit" == "Premium" ]]; then
+    echo "Memutar: $selected_ep_title [PREMIUM]"
+    echo
+    echo "If video has a [Premium] label, it cannot be played unless your Bstation account has a Premium subscription."
+else
+    echo "Memutar: $selected_ep_title"
+fi
 
-        mpv \
-            --ytdl-raw-options="cookies-from-browser=firefox" \
-            --slang=id \
-            "https://www.bilibili.tv/id/play/${selected_season_id}/${selected_ep_id}"
+echo
 
-        return $?
+mpv \
+    --ytdl-raw-options="cookies-from-browser=firefox" \
+    --slang=id \
+    "https://www.bilibili.tv/id/play/${selected_season_id}/${selected_ep_id}"
+
+return $?
     fi
 
     # --------------------------------------------------
@@ -374,25 +359,24 @@ bstation() {
 
             for ((jq_index = start; jq_index < end; jq_index++)); do
 
-                display_index=$((jq_index - start + 1))
+    display_index=$((jq_index - start + 1))
 
-                ep_short=$(
-                    jq -r \
-                        ".[$jq_index].short_title_display // \"Episode\"" \
-                        "$section_file"
-                )
+    ep_short=$(jq -r ".[$jq_index].short_title_display // \"Episode\"" "$section_file")
+    ep_title=$(jq -r ".[$jq_index].long_title_display // .[$jq_index].title_display // \"\"" "$section_file")
+    ep_limit=$(jq -r ".[$jq_index].limit_text // \"\"" "$section_file")
 
-                ep_title=$(
-                    jq -r \
-                        ".[$jq_index].long_title_display // .[$jq_index].title_display // \"\"" \
-                        "$section_file"
-                )
-
-                printf "[%2d] %-7s %s\n" \
-                    "$display_index" \
-                    "$ep_short" \
-                    "$ep_title"
-            done
+    if [[ "$ep_limit" == "Premium" ]]; then
+        printf "[%2d] %-7s %s [PREMIUM]\n" \
+            "$display_index" \
+            "$ep_short" \
+            "$ep_title"
+    else
+        printf "[%2d] %-7s %s\n" \
+            "$display_index" \
+            "$ep_short" \
+            "$ep_title"
+    fi
+done
 
             echo
             echo "Halaman $((page + 1))/$total_pages"
@@ -477,18 +461,36 @@ bstation() {
                     "$section_file"
             )
 
+            ep_limit=$(
+    jq -r \
+        ".[$jq_index].limit_text // \"\"" \
+        "$section_file"
+)
+
             local final_url
             final_url="https://www.bilibili.tv/id/play/${selected_season_id}/${ep_id}"
 
-            echo
-            echo "Memutar: $ep_title"
-            echo
+           echo
 
-            mpv \
-                --ytdl-raw-options="cookies-from-browser=firefox" \
-                --slang=id \
-                "$final_url"
+if [[ "$ep_limit" == "Premium" ]]; then
+    echo "Memutar: $ep_title [PREMIUM]"
+    echo
+    echo "This video requires a Bstation Premium subscription."
+    echo "Your Bstation account must be logged in through Firefox."
+    echo
+    
+else
+    echo "Memutar: $ep_title..."
+fi
 
+echo
+
+mpv \
+    --ytdl-raw-options="cookies-from-browser=firefox" \
+    --slang=id \
+    "$final_url"
+
+#return $? #hapus kalo terminal reuseable
         done
 
         rm -f "$section_file"
